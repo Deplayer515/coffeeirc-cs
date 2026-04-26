@@ -99,17 +99,12 @@ dotnet publish --self-contained ture -p:PublishAot=true -r <平台代名,例如w
    ```
 4. **进行开发** 并遵循 [贡献规范](../coffeechat/CONTRIBUTING.md)
 5. **提交更改** 并推送
-6. **创建Pull Request"
+6. **创建Pull Request"***
 
 ### 文档说明
 
 - **外部贡献文档**：位于源代码根目录（如本README、CONTRIBUTING.md等）
 - **内部开发文档**：请写入 [`docs/`](docs/) 文件夹内
-
-### 代码规范
-- 使用Java 25语法特性
-- 遵循NeoForge开发最佳实践
-- 确保良好的代码文档和注释
 
 ## 📄 许可证与遵循协议
 
