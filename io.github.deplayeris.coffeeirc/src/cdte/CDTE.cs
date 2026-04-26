@@ -63,12 +63,12 @@ public class CDTE
         if (client.IsConnected())
         {
             await client.SendMessageAsync("Hello, World!");
-            Console.WriteLine("\n[提示] 消息已发送，您可以在控制台输入消息继续聊天");
+            Console.WriteLine("\n提示 ] 消息已发送，您可以在控制台输入消息继续聊天");
             Console.WriteLine("[提示] 输入 'quit' 或 'exit' 退出程序\n");
         }
         else
         {
-            Console.WriteLine("\n[错误] 未连接到服务器，无法发送消息");
+            Console.WriteLine("\n错误 ] 未连接到服务器，无法发送消息");
         }
         
         // 主循环：读取用户输入
@@ -90,7 +90,7 @@ public class CDTE
             }
             else
             {
-                Console.WriteLine("[错误] 未连接到服务器");
+                Console.WriteLine("错误 ] 未连接到服务器");
             }
         }
         

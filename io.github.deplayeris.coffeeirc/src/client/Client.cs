@@ -316,7 +316,6 @@ public partial class Client
                 else
                 {
                     LogError($"[连接错误] 连接失败，状态码: {response.StatusCode}");
-                    _ = ShowAsync(ShowManager.ShowItem.ShowError, "无法连接到服务器");
                     
                 }
             }
@@ -324,6 +323,7 @@ public partial class Client
         catch (Exception e)
         {
             LogError("[连接错误] 连接服务器失败：" + e.Message);
+            _ = ShowAsync(ShowManager.ShowItem.ShowError, "无法连接到服务器");
         }
     }
     
