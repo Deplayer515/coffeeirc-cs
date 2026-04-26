@@ -65,10 +65,10 @@ dotnet publish --self-contained ture -p:PublishAot=true -r <平台代名,例如w
 2. 解压合并入自己的源码内，以该语言使用外部Native库的方式将CIC链接到自己的项目
 3. 参考文档进行适用开发
 
-#### 对于使用了CoffeeChat的Minecraft玩家
+#### 对于使用了CoffeeChatMC的Minecraft玩家
 
 - 对于普通玩家<br>
-  请前往[此处](https://github.com/deplayeris/coffeechat/releases)选择合适版本下载并照CoffeeChat项目的README.md中说明进行安装，无需理会本项目。
+  请前往[此处](https://github.com/deplayeris/coffeechat/releases)选择合适版本下载并照CoffeeChatMC项目的README.md中说明进行安装，无需理会本项目。
 > [!WARNING]
 > **请勿将本项目的可运行编译产物安装进游戏，本项目所编写的内容不是Minecraft模组，不是Minecraft模组，不是Minecraft模组！**
 

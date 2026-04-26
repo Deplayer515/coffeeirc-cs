@@ -21,16 +21,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-using System;
-using System.IO;
+/*
+ * 
+ * 此部分为Client主要运行部分
+ * 
+ */
+
+
 using System.Net;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Net.Sockets;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace io.github.deplayeris.coffeeirc.client;
@@ -38,19 +38,37 @@ namespace io.github.deplayeris.coffeeirc.client;
 /// <summary>
 /// CIC 客户端核心
 /// </summary>
-public class Client
+public partial class Client
 {
-    private static readonly ILogger cml = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<Client>();
+    private static ILogger? cml = null;
+    private static StreamWriter? coreLogWriter = null;
+    private static string? currentCoreLogDate = null;
+    private static int coreLogSequence = 0;
+    
+    /// <summary>
+    /// 安全记录日志（自动处理 null 检查）
+    /// </summary>
+    private static void LogInfo(string message)
+    {
+        cml?.LogInformation(message);
+    }
+    
+    private static void LogError(string message)
+    {
+        cml?.LogError(message);
+    }
+    
+    private static void LogWarning(string message)
+    {
+        cml?.LogWarning(message);
+    }
 
-    private string distributionName;
-    private string ip;
+    private string? distributionName;
+    private string? ip;
     private int port;
     private int ipProtocol;
-    private string nickname;
-    private string username;
-    private string servername;
-    private string serverdescription;
-    private string clientId;
+    private string? nickname;
+    private string? username;
     private ShowManager showManager;
     private string sIFP = ".show";
     private bool isConnected = false;
@@ -60,40 +78,154 @@ public class Client
     private string chatLogFormat = "yyyy-MM-dd HH:mm:ss";
 
     private HttpListener? pushServer;
-    private int pushPort = 10026;
+    private int pushPort = 10027; // 修改默认端口避免冲突
 
     private RSA? rsaKeyPair;
     private byte[]? aesKey;
-    private byte[]? serverPublicKey;
     private bool encryptionEnabled = false;
     private string? customKey = null;
 
     private HttpClient? clientHttp;
+    private CancellationTokenSource? cancellationTokenSource;
+    private Task? pushServiceTask;
     
     /// <summary>
-    /// 客户端构造函数
+    /// 初始化核心日志系统
+    /// </summary>
+    private static void InitializeCoreLogger()
+    {
+        try
+        {
+            string today = DateTime.Now.ToString("yyyy-MM-dd");
+            
+            // 如果日期变化或首次初始化，重置序号
+            if (currentCoreLogDate != today)
+            {
+                currentCoreLogDate = today;
+                coreLogSequence = 0;
+            }
+            
+            // 寻找可用的日志文件序号
+            string logDirectory = "./ciclogs";
+            Directory.CreateDirectory(logDirectory);
+            
+            string logFileName;
+            do
+            {
+                logFileName = Path.Combine(logDirectory, $"ciccore-{today}-{coreLogSequence}.log");
+                coreLogSequence++;
+            } while (File.Exists(logFileName) && coreLogSequence < 100);
+            
+            // 创建日志文件流
+            FileStream fileStream = new FileStream(logFileName, FileMode.Append, FileAccess.Write);
+            coreLogWriter = new StreamWriter(fileStream, Encoding.UTF8);
+            coreLogWriter.AutoFlush = true;
+            
+            // 创建只写入文件的 Logger
+            var loggerFactory = LoggerFactory.Create(builder =>
+            {
+                builder.AddProvider(new FileLoggerProvider(coreLogWriter));
+                builder.SetMinimumLevel(LogLevel.Information);
+            });
+            
+            cml = loggerFactory.CreateLogger<Client>();
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[严重错误] 初始化核心日志失败: {e.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// 文件日志提供者
+    /// </summary>
+    private class FileLoggerProvider : ILoggerProvider
+    {
+        private readonly StreamWriter _writer;
+        
+        public FileLoggerProvider(StreamWriter writer)
+        {
+            _writer = writer;
+        }
+        
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new FileLogger(_writer, categoryName);
+        }
+        
+        public void Dispose()
+        {
+            _writer?.Flush();
+        }
+    }
+    
+    /// <summary>
+    /// 文件日志记录器
+    /// </summary>
+    private class FileLogger : ILogger
+    {
+        private readonly StreamWriter _writer;
+        private readonly string _categoryName;
+        
+        public FileLogger(StreamWriter writer, string categoryName)
+        {
+            _writer = writer;
+            _categoryName = categoryName;
+        }
+        
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull
+        {
+            return NullDisposable.Instance;
+        }
+        
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return logLevel >= LogLevel.Information;
+        }
+        
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (!IsEnabled(logLevel))
+                return;
+            
+            string message = formatter(state, exception);
+            string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+            string level = logLevel switch
+            {
+                LogLevel.Trace => "TRACE",
+                LogLevel.Debug => "DEBUG",
+                LogLevel.Information => "INFO",
+                LogLevel.Warning => "WARN",
+                LogLevel.Error => "ERROR",
+                LogLevel.Critical => "FATAL",
+                _ => "INFO"
+            };
+            
+            string logEntry = $"[{timestamp}] [{level}] [{_categoryName}] {message}";
+            
+            if (exception != null)
+            {
+                logEntry += $"\nException: {exception}\n{exception.StackTrace}";
+            }
+            
+            lock (_writer)
+            {
+                _writer.WriteLine(logEntry);
+            }
+        }
+        
+        private class NullDisposable : IDisposable
+        {
+            public static readonly NullDisposable Instance = new();
+            public void Dispose() { }
+        }
+    }
+    
+    /// <summary>
+    /// 客户端构造函数，使用此即代表创建客户端实例并且开启客户端
     /// </summary>
     public Client(int ipProtocol, string ip, int port, string nickname, string username, string distributionName, string customKey = "", string sIFP = ".show")
     {
-        cml.LogInformation("---------------------------------------------------------------------------------");
-        cml.LogInformation("[核心信息] 正在使用的 CoffeeIRC 核心的软件信息:");
-        cml.LogInformation("        版本号：" + SwInfoc.Version);
-        cml.LogInformation("        开发状态：" + SwInfoc.SoftwareStatus);
-        cml.LogInformation("        版本代号：" + SwInfoc.VerCodename);
-        cml.LogInformation("        支持协议：" + SwInfoc.Connection);
-        cml.LogInformation("");
-        cml.LogInformation("当前运行本核心的发行版：" + distributionName);
-        cml.LogInformation("");
-        cml.LogInformation("如果遇到核心问题，请提交至：https://github.com/deplayeris/coffeeirc/issues");
-        cml.LogInformation("如在使用基于本核心的发行版 (如无忧聊) 时出现问题");
-        cml.LogInformation("请先检查是否为核心故障 (通过查看核心日志)，若非核心问题请联系发行版作者");
-        cml.LogInformation("");
-        cml.LogInformation("核心问题提交步骤:");
-        cml.LogInformation("1. 在 GitHub 上创建新的 Issue");
-        cml.LogInformation("2. 详细准确地描述遇到的问题");
-        cml.LogInformation("3. 附上出现问题时的核心日志文件");
-        cml.LogInformation("---------------------------------------------------------------------------------");
-
         this.ipProtocol = ipProtocol;
         this.ip = ip;
         this.port = port;
@@ -102,19 +234,133 @@ public class Client
         this.customKey = customKey;
         this.distributionName = distributionName;
         this.sIFP = sIFP;
+        this.showManager = new ShowManager(this.sIFP);
 
-        cml.LogInformation("[客户端初始化] 开始创建客户端实例");
-        cml.LogInformation("[配置详情] IP 协议版本：IPv" + ipProtocol);
-        cml.LogInformation("[配置详情] 服务器地址：" + ip + ":" + port);
-        cml.LogInformation("[用户信息] 用户昵称：" + nickname);
-        cml.LogInformation("[用户信息] 用户名：" + username);
-        cml.LogInformation("[实例创建] 客户端实例已成功创建并配置完成");
-
-        InitializeChatLog();
-        StartPushService();
-        InitializeEncryption(customKey);
+        // 初始化核心日志系统
+        InitializeCoreLogger();
+        
+        if (cml != null)
+        {
+            LogInfo("[客户端初始化] 开始创建客户端实例");
+            LogInfo("[实例创建] 客户端实例已成功创建并配置完成");
+        }
 
         clientHttp = new HttpClient();
+    }
+
+    public void StartClient()
+    {
+        LogInfo("---------------------------------------------------------------------------------");
+        LogInfo("[核心信息] 正在使用的 CoffeeIRC 核心的软件信息:");
+        LogInfo("        版本号：" + SwInfoc.Version);
+        LogInfo("        开发状态：" + SwInfoc.SoftwareStatus);
+        LogInfo("        版本代号：" + SwInfoc.VerCodename);
+        LogInfo("        支持协议：" + SwInfoc.Connection);
+        LogInfo("");
+        LogInfo("当前运行本核心的发行版：" + distributionName);
+        LogInfo("");
+        LogInfo("如果遇到核心问题，请提交至：https://github.com/deplayeris/coffeeirc/issues");
+        LogInfo("如在使用基于本核心的发行版 (如无忧聊) 时出现问题");
+        LogInfo("请先检查是否为核心故障 (通过查看核心日志)，若非核心问题请联系发行版作者");
+        LogInfo("");
+        LogInfo("核心问题提交步骤:");
+        LogInfo("1. 在 GitHub 上创建新的 Issue");
+        LogInfo("2. 详细准确地描述遇到的问题");
+        LogInfo("3. 附上出现问题时的核心日志文件");
+        LogInfo("---------------------------------------------------------------------------------");
+        LogInfo("[配置详情] IP 协议版本：IPv" + ipProtocol);
+        LogInfo("[配置详情] 服务器地址：" + ip + ":" + port);
+        LogInfo("[用户信息] 用户昵称：" + nickname);
+        LogInfo("[用户信息] 用户名：" + username);
+        LogInfo("[实例创建] 客户端实例已成功创建并配置完成");
+        
+        _ = ShowAsync(ShowManager.ShowItem.ShowInfo, "客户端已就绪");
+        
+        InitializeChatLog();
+        StartPushService();
+        InitializeEncryption(customKey ?? "");
+        
+        _ = ConnectAsync();
+    }
+    
+    /// <summary>
+    /// 连接到服务器
+    /// </summary>
+    private async Task ConnectAsync()
+    {
+        try
+        {
+            if (ip == null || nickname == null)
+            {
+                LogError("[连接错误] IP 或昵称为空，无法连接");
+                return;
+            }
+            
+            LogInfo("[连接] 正在连接到服务器...");
+            string url = $"http://{ip}:{port}/connect";
+            string requestData = $"username={nickname}&protocol={SwInfoc.Connection}";
+            
+            var content = new StringContent(requestData, Encoding.UTF8, "application/x-www-form-urlencoded");
+            if (clientHttp != null)
+            {
+                HttpResponseMessage response = await clientHttp.PostAsync(url, content);
+                if (response.IsSuccessStatusCode)
+                {
+                    isConnected = true;
+                    LogInfo("[连接] 成功连接到服务器");
+                    _ = ShowAsync(ShowManager.ShowItem.ShowInfo, "客户端已连接到服务器");
+                    
+                    // 心跳保活
+                    _ = KeepAliveAsync();
+                }
+                else
+                {
+                    LogError($"[连接错误] 连接失败，状态码: {response.StatusCode}");
+                    _ = ShowAsync(ShowManager.ShowItem.ShowError, "无法连接到服务器");
+                    
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            LogError("[连接错误] 连接服务器失败：" + e.Message);
+        }
+    }
+    
+    /// <summary>
+    /// 心跳保活机制
+    /// </summary>
+    private async Task KeepAliveAsync()
+    {
+        if (cancellationTokenSource == null)
+        {
+            cancellationTokenSource = new CancellationTokenSource();
+        }
+        
+        while (!cancellationTokenSource.Token.IsCancellationRequested && isConnected)
+        {
+            try
+            {
+                await Task.Delay(30000, cancellationTokenSource.Token);
+                
+                if (isConnected && ip != null)
+                {
+                    string url = $"http://{ip}:{port}/heartbeat";
+                    if (clientHttp != null)
+                    {
+                        _ = clientHttp.GetAsync(url);
+                    }
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                break;
+            }
+            catch (Exception e)
+            {
+                LogWarning("[心跳] 心跳检测异常：" + e.Message);
+            }
+        }
     }
     
     
@@ -136,11 +382,11 @@ public class Client
             chatLogWriter = new StreamWriter(fileStream, Encoding.UTF8);
             chatLogWriter.AutoFlush = true;
 
-            cml.LogInformation("[聊天日志] 聊天日志系统已初始化，日志文件：" + logFileName);
+            LogInfo("[聊天日志] 聊天日志系统已初始化，日志文件：" + logFileName);
         }
         catch (IOException e)
         {
-            cml.LogError("[聊天日志错误] 初始化聊天日志失败：" + e.Message);
+            LogError("[聊天日志错误] 初始化聊天日志失败：" + e.Message);
         }
     }
 
@@ -169,18 +415,18 @@ public class Client
         }
         catch (Exception e)
         {
-            cml.LogError("[聊天日志错误] 记录聊天消息失败：" + e.Message);
+            LogError("[聊天日志错误] 记录聊天消息失败：" + e.Message);
         }
     }
 
     /// <summary>
     /// 初始化加密系统
     /// </summary>
-    private void InitializeEncryption(string customKey)
+    private void InitializeEncryption(string? customKey)
     {
         try
         {
-            cml.LogInformation("[加密初始化] 开始初始化加密通讯系统...");
+            LogInfo("[加密初始化] 开始初始化加密通讯系统...");
 
             if (customKey != null && !string.IsNullOrEmpty(customKey))
             {
@@ -189,19 +435,19 @@ public class Client
                 using var rng = RandomNumberGenerator.Create();
                 rng.GetBytes(seedBytes);
                 rsaKeyPair = RSA.Create(2048);
-                cml.LogInformation("[加密初始化] 使用自定义密钥种子初始化加密系统");
+                LogInfo("[加密初始化] 使用自定义密钥种子初始化加密系统");
             }
             else
             {
                 rsaKeyPair = RSA.Create(2048);
-                cml.LogInformation("[加密初始化] 使用随机密钥初始化加密系统");
+                LogInfo("[加密初始化] 使用随机密钥初始化加密系统");
             }
 
-            cml.LogInformation("[加密初始化] RSA 密钥对生成成功");
+            LogInfo("[加密初始化] RSA 密钥对生成成功");
         }
         catch (Exception e)
         {
-            cml.LogError("[加密错误] 初始化加密系统失败：" + e.Message);
+            LogError("[加密错误] 初始化加密系统失败：" + e.Message);
         }
     }
 
@@ -229,7 +475,7 @@ public class Client
         }
         catch (Exception e)
         {
-            cml.LogError("[加密错误] 消息加密失败：" + e.Message);
+            LogError("[加密错误] 消息加密失败：" + e.Message);
             return message;
         }
     }
@@ -242,14 +488,20 @@ public class Client
         try
         {
             byte[] encryptedKeyBytes = Convert.FromBase64String(encryptedAesKeyStr);
-            byte[] decryptedKeyBytes = rsaKeyPair.Decrypt(encryptedKeyBytes, RSAEncryptionPadding.Pkcs1);
-
-            aesKey = decryptedKeyBytes;
-            cml.LogInformation("[密钥交换] AES 密钥解密成功");
+            if (rsaKeyPair != null)
+            {
+                byte[] decryptedKeyBytes = rsaKeyPair.Decrypt(encryptedKeyBytes, RSAEncryptionPadding.Pkcs1);
+                aesKey = decryptedKeyBytes;
+                LogInfo("[密钥交换] AES 密钥解密成功");
+            }
+            else
+            {
+                LogError("[密钥交换错误] RSA 密钥对未初始化");
+            }
         }
         catch (Exception e)
         {
-            cml.LogError("[密钥交换错误] AES 密钥解密失败：" + e.Message);
+            LogError("[密钥交换错误] AES 密钥解密失败：" + e.Message);
         }
     }
 
@@ -277,7 +529,7 @@ public class Client
         }
         catch (Exception e)
         {
-            cml.LogError("[解密错误] 消息解密失败：" + e.Message);
+            LogError("[解密错误] 消息解密失败：" + e.Message);
             return encryptedMessage;
         }
     }
@@ -294,12 +546,12 @@ public class Client
                 chatLogWriter.Flush();
                 chatLogWriter.Close();
                 chatLogWriter.Dispose();
-                cml.LogInformation("[聊天日志] 聊天日志已关闭");
+                LogInfo("[聊天日志] 聊天日志已关闭");
             }
         }
         catch (Exception e)
         {
-            cml.LogError("[聊天日志错误] 关闭聊天日志失败：" + e.Message);
+            LogError("[聊天日志错误] 关闭聊天日志失败：" + e.Message);
         }
     }
 
@@ -310,30 +562,60 @@ public class Client
     {
         try
         {
-            pushServer = new HttpListener();
-            pushServer.Prefixes.Add($"http://+:{pushPort}/");
-            pushServer.Start();
-            cml.LogInformation("[推送服务] 推送服务已启动，监听端口：" + pushPort);
-
-            Task.Run(() =>
+            // 尝试多个端口，避免冲突
+            bool started = false;
+            for (int port = pushPort; port < pushPort + 10; port++)
             {
-                while (pushServer.IsListening)
+                try
+                {
+                    pushServer = new HttpListener();
+                    pushServer.Prefixes.Add($"http://+:{port}/");
+                    pushServer.Start();
+                    pushPort = port; // 更新实际使用的端口
+                    started = true;
+                    LogInfo("[推送服务] 推送服务已启动，监听端口：" + port);
+                    break;
+                }
+                catch (HttpListenerException)
+                {
+                    // 端口被占用，尝试下一个
+                    pushServer?.Close();
+                }
+            }
+            
+            if (!started)
+            {
+                LogError("[推送服务错误] 无法启动推送服务，端口 " + pushPort + "-" + (pushPort + 9) + " 均被占用");
+                return;
+            }
+
+            cancellationTokenSource = new CancellationTokenSource();
+            pushServiceTask = Task.Run(() =>
+            {
+                while (!cancellationTokenSource.Token.IsCancellationRequested && pushServer != null && pushServer.IsListening)
                 {
                     try
                     {
                         HttpListenerContext context = pushServer.GetContext();
                         HandlePushRequest(context);
                     }
+                    catch (ObjectDisposedException)
+                    {
+                        break; // 服务已关闭
+                    }
                     catch (Exception e)
                     {
-                        cml.LogError("[推送服务错误] 处理推送请求失败：" + e.Message);
+                        if (!cancellationTokenSource.Token.IsCancellationRequested)
+                        {
+                            LogError("[推送服务错误] 处理推送请求失败：" + e.Message);
+                        }
                     }
                 }
-            });
+            }, cancellationTokenSource.Token);
         }
         catch (Exception e)
         {
-            cml.LogError("[推送服务错误] 启动推送服务失败：" + e.Message);
+            LogError("[推送服务错误] 启动推送服务失败：" + e.Message);
         }
     }
 
@@ -345,7 +627,7 @@ public class Client
         HttpListenerRequest request = context.Request;
         HttpListenerResponse response = context.Response;
 
-        string message = request.QueryString["message"];
+        string? message = request.QueryString["message"];
         if (!string.IsNullOrEmpty(message))
         {
             string decryptedMessage = DecryptMessage(message);
@@ -355,8 +637,8 @@ public class Client
                 string sender = parts[0];
                 string msgContent = parts[1];
                 LogChatMessage(sender, msgContent);
-                cml.LogInformation("[收到消息] " + sender + ": " + msgContent);
-                
+                LogInfo("[收到消息] " + sender + ": " + msgContent);
+                _ = ShowAsync(ShowManager.ShowItem.ShowMessage, sender + ": " + msgContent);
             }
         }
 
@@ -366,41 +648,16 @@ public class Client
         using var output = response.OutputStream;
         output.Write(buffer, 0, buffer.Length);
     }
-
-    /// <summary>
-    /// 连接到服务器
-    /// </summary>
-    public async Task ConnectAsync()
-    {
-        try
-        {
-            string url = $"http://{ip}:{port}/connect";
-            string requestData = $"nickname={nickname}&username={username}";
-
-            var content = new StringContent(requestData, Encoding.UTF8, "application/x-www-form-urlencoded");
-            HttpResponseMessage response = await clientHttp.PostAsync(url, content);
-            response.EnsureSuccessStatusCode();
-
-            string responseBody = await response.Content.ReadAsStringAsync();
-            cml.LogInformation("[连接服务器] 成功连接到服务器：" + ip + ":" + port);
-
-            isConnected = true;
-        }
-        catch (Exception e)
-        {
-            cml.LogError("[连接错误] 连接服务器失败：" + e.Message);
-            isConnected = false;
-        }
-    }
-
+    
     /// <summary>
     /// 发送消息
     /// </summary>
+    /// <param name="message">消息内容</param>
     public async Task SendMessageAsync(string message)
     {
         if (!isConnected)
         {
-            cml.LogError("[发送错误] 未连接到服务器，无法发送消息");
+            LogError("[发送错误] 未连接到服务器，无法发送消息");
             return;
         }
 
@@ -411,15 +668,25 @@ public class Client
             string requestData = $"username={nickname}&message={encryptedMessage}";
 
             var content = new StringContent(requestData, Encoding.UTF8, "application/x-www-form-urlencoded");
-            HttpResponseMessage response = await clientHttp.PostAsync(url, content);
-            response.EnsureSuccessStatusCode();
+            if (clientHttp != null)
+            {
+                HttpResponseMessage response = await clientHttp.PostAsync(url, content);
+                response.EnsureSuccessStatusCode();
 
-            LogChatMessage(nickname, message);
-            cml.LogInformation("[发送消息] " + nickname + ": " + message);
+                if (nickname != null)
+                {
+                    LogChatMessage(nickname, message);
+                    LogInfo("[发送消息] " + nickname + ": " + message);
+                }
+            }
+            else
+            {
+                LogError("[发送错误] HTTP 客户端未初始化");
+            }
         }
         catch (Exception e)
         {
-            cml.LogError("[发送错误] 发送消息失败：" + e.Message);
+            LogError("[发送错误] 发送消息失败：" + e.Message);
         }
     }
 
@@ -430,22 +697,33 @@ public class Client
     {
         try
         {
-            if (isConnected)
+            if (isConnected && ip != null && nickname != null)
             {
                 string url = $"http://{ip}:{port}/disconnect";
                 string requestData = $"username={nickname}";
 
                 var content = new StringContent(requestData, Encoding.UTF8, "application/x-www-form-urlencoded");
-                HttpResponseMessage response = await clientHttp.PostAsync(url, content);
-                response.EnsureSuccessStatusCode();
-
-                cml.LogInformation("[断开连接] 已从服务器断开连接");
-                isConnected = false;
+                if (clientHttp != null)
+                {
+                    HttpResponseMessage response = await clientHttp.PostAsync(url, content);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        LogInfo("[断开连接] 已从服务器断开连接");
+                        _ = ShowAsync(ShowManager.ShowItem.ShowInfo, "已断开与服务器的连接");
+                    }
+                }
+            }
+            isConnected = false;
+            
+            // 停止心跳
+            if (cancellationTokenSource != null)
+            {
+                cancellationTokenSource.Cancel();
             }
         }
         catch (Exception e)
         {
-            cml.LogError("[断开连接错误] 断开连接失败：" + e.Message);
+            LogError("[断开连接错误] 断开连接失败：" + e.Message);
         }
     }
 
@@ -456,24 +734,59 @@ public class Client
     {
         try
         {
+            // 先断开连接
+            if (isConnected)
+            {
+                _ = DisconnectAsync();
+            }
+            
+            // 停止推送服务
             if (pushServer != null && pushServer.IsListening)
             {
                 pushServer.Stop();
                 pushServer.Close();
-                cml.LogInformation("[推送服务] 推送服务已关闭");
+                if (cml != null) LogInfo("[推送服务] 推送服务已关闭");
+            }
+            
+            // 等待推送服务任务结束
+            if (pushServiceTask != null)
+            {
+                pushServiceTask.Wait(TimeSpan.FromSeconds(5));
+            }
+            
+            // 取消所有异步操作
+            if (cancellationTokenSource != null)
+            {
+                cancellationTokenSource.Cancel();
+                cancellationTokenSource.Dispose();
             }
 
             if (clientHttp != null)
             {
                 clientHttp.Dispose();
             }
+            
+            // 释放 RSA 密钥对
+            if (rsaKeyPair != null)
+            {
+                rsaKeyPair.Dispose();
+            }
 
             CloseChatLog();
-            cml.LogInformation("[客户端] 客户端已关闭");
+            if (cml != null) LogInfo("[客户端] 客户端已关闭");
+            _ = ShowAsync(ShowManager.ShowItem.ShowInfo, "客户端已关闭");
+            
+            // 关闭核心日志
+            if (coreLogWriter != null)
+            {
+                coreLogWriter.Flush();
+                coreLogWriter.Close();
+                coreLogWriter.Dispose();
+            }
         }
         catch (Exception e)
         {
-            cml.LogError("[关闭错误] 关闭客户端失败：" + e.Message);
+            Console.WriteLine($"[关闭错误] 关闭客户端失败: {e.Message}");
         }
     }
 
@@ -482,111 +795,15 @@ public class Client
         return isConnected;
     }
 
-    public string GetNickname()
+    public string? GetNickname()
     {
         return nickname;
     }
 
-    public string GetUsername()
+    public string? GetUsername()
     {
         return username;
     }
     
-    /// <summary>
-    /// 信息呈现管理器的工具方法，用于向外界呈现信息，ShowManager为其提供支持
-    /// </summary>
-    /// <param name="showItem">呈现何种内容</param>
-    /// <param name="message">内容的具体详情</param>
-    private async Task ShowAsync(ShowManager.ShowItem showItem, string message)
-    { 
-        
-        
-        
-    }
-    
-    
-    /// <summary>
-    /// 信息呈现管理器，用于向外界呈现信息的相关管理事宜
-    /// </summary>
-    private class ShowManager
-    {
-        /// <summary>
-        /// ShowInterfaceFilePath
-        /// </summary>
-        private string sIFP;
-        
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="showInterfaceFilePath">传给内部成员"sIFP"，用于确定呈现器接口文件路径</param>
-        public ShowManager(string showInterfaceFilePath)
-        {
-            sIFP = showInterfaceFilePath;
-
-            File.Create(sIFP);
-        }
-        
-        /// <summary>
-        /// 呈现信息种类枚举
-        /// </summary>
-        public enum ShowItem
-        {
-            /// <summary>
-            /// 显示消息
-            /// </summary>
-            ShowMessage = 0,
-            /// <summary>
-            /// 显示提示
-            /// </summary>
-            ShowTip = 1,
-            /// <summary>
-            /// 显示错误
-            /// </summary>
-            ShowError = 2,
-            /// <summary>
-            /// 显示警告
-            /// </summary>
-            ShowWarning = 3,
-            /// <summary>
-            /// 显示信息
-            /// </summary>
-            ShowInfo = 4,
-            /// <summary>
-            /// 显示调试信息
-            /// </summary>
-            ShowDebug = 5,
-            /// <summary>
-            /// 显示用户发送聊天信息
-            /// </summary>
-            ShowChatmsg = 6
-        }
-
-        public void ShowThis(ShowItem showItem, string message)
-        {
-            switch (showItem)
-            {
-                case ShowItem.ShowMessage:
-                    File.WriteAllText(sIFP, "[MSG]"+message);
-                    break;
-                case ShowItem.ShowTip:
-                    File.WriteAllText(sIFP, "[TIP]"+message);
-                    break;
-                case ShowItem.ShowError:
-                    File.WriteAllText(sIFP, "[ERR]"+message);
-                    break;
-                case ShowItem.ShowWarning:
-                    File.WriteAllText(sIFP, "[WAN]"+message);
-                    break;
-                case ShowItem.ShowInfo:
-                    File.WriteAllText(sIFP, "[INF]"+message);
-                    break;
-                case ShowItem.ShowDebug:
-                    File.WriteAllText(sIFP, "[DBG]"+message);
-                    break;
-                case ShowItem.ShowChatmsg:
-                    File.WriteAllText(sIFP, "[CHT]"+message);
-                    break;
-            }
-        }
-    }
 }
+
