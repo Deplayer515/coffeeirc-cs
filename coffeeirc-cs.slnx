@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="io.github.deplayeris.coffeeirc/io.github.deplayeris.coffeeirc.csproj">
+    <Deploy Solution="Debug|*" />
+  </Project>
+</Solution>
