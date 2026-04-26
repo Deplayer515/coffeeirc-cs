@@ -1,7 +1,7 @@
 <div align="center">
 
-# 无忧聊 - Minecraft 聊天增强模组
-### 的附属项目 咖啡IRC(CoffeeIRC,CIC) 【C# Edition】
+# 咖啡IRC(CoffeeIRC,CIC) 
+### 【C# Edition】
 <div align="center">
   <img src="./coffeeirc.png" alt="CoffeeIRC Logo" width="96" height="54">
 </div>
@@ -9,11 +9,13 @@
 
 
 [![MIT License](https://img.shields.io/badge/License-MIT-red.svg?style=flat&labelColor=444444)](https://opensource.org/licenses/MIT)
+[![Code of Conduct](https://img.shields.io/badge/Code%20of%20Conduct-DeplayerCTS%202026--0001-orange?style=flat&labelColor=444444)](CODE_OF_CONDUCT.md)<br>
+
 [![.NET SDK](https://img.shields.io/badge/.NET-10-blue?style=flat&labelColor=444444&logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download)
 [![C#](https://img.shields.io/badge/C%23-14-cray?style=flat&labelColor=444444&logo=csharp&logoColor=white)](https://learn.microsoft.com/dotnet/csharp/)
 [![Namespace](https://img.shields.io/badge/Namespace-io.github.deplayeris.coffeeirc-purple?style=flat&labelColor=444444&logo=github&logoColor=white)](https://github.com/deplayeris/coffeeirc)
 
-<br>CoffeeChat是一个基于NeoForge的Minecraft聊天增强模组，为玩家提供更专业、更完善的IRC聊天系统体验。<br>-----本项目为其核心部分 by C#-----
+
 </div>
 
 ## 🎈介绍
