@@ -11,3 +11,5 @@ api
 docs
 index.md
 /ciclogs
+*.show
+*.log

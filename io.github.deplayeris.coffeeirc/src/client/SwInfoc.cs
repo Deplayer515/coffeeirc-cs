@@ -31,5 +31,5 @@ public static class SwInfoc
     public static string Version { get; } = "v26.d2.1 - Client:2";
     public static string SoftwareStatus { get; } = "Dev";
     public static string VerCodename { get; } = "Sekrata";
-    public static string Connection { get; } = "HTTPS+Websocket";
+    public static string Connection { get; } = "HTTPS-like";
 }
