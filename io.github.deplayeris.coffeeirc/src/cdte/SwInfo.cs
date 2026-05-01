@@ -21,15 +21,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-namespace io.github.deplayeris.coffeeirc.client;
+
+namespace io.github.deplayeris.coffeeirc.cdte;
 
 /// <summary>
-/// CIC 核心的软件信息
+/// CDTE的软件信息
 /// </summary>
-public static class SwInfoc
+public static class SwInfoe
 {
-    public static string Version { get; } = "26.1d.0 - Client 26.1d.0";
-    public static string SoftwareStatus { get; } = "Dev";
-    public static string VerCodename { get; } = "Sekrata";
-    public static string Connection { get; } = "HTTPS-like";
+    public static string Version{ get; } = "26.1d.2";
+    public static string SoftwareStatus{ get; } = "Dev";
+    public static string VerCodename{ get; } = "Shovo";
 }

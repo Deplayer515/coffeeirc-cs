@@ -22,6 +22,7 @@ SOFTWARE.
 */
 
 using io.github.deplayeris.coffeeirc.client;
+using io.github.deplayeris.coffeeirc.cdte;
 
 namespace io.github.deplayeris.coffeeirc.cdte;
 
@@ -35,31 +36,26 @@ public class CDTE
     
     public static async Task Main(string[] args)
     {
-        // 启动消息读取任务
         var readTask = ReadShowAsync();
         
         Console.WriteLine("CDTE - CIC 官方测试开发发行版");
-        Console.WriteLine($"版本：{SwInfoc.Version}");
-        Console.WriteLine($"状态：{SwInfoc.SoftwareStatus}");
-        Console.WriteLine($"代号：{SwInfoc.VerCodename}");
-        Console.WriteLine($"协议：{SwInfoc.Connection}");
+        Console.WriteLine($"版本：{SwInfoe.Version}");
+        Console.WriteLine($"状态：{SwInfoe.SoftwareStatus}");
+        Console.WriteLine($"代号：{SwInfoe.VerCodename}");
         Console.WriteLine();
 
-        // 创建客户端实例
         var client = new Client(
             ipProtocol: 4,
             ip: "127.0.0.1",
             port: 8080,
             nickname: "TestUser",
             username: "testuser",
-            distributionName: "CDTE v1.0",
+            distributionName: $"CDTE {SwInfoe.Version}",
             customKey: "dsaitopeing"
         );
         
-        // 启动客户端
         client.StartClient();
         
-        // 发送测试消息
         if (client.IsConnected())
         {
             await client.SendMessageAsync("Hello, World!");
@@ -71,7 +67,6 @@ public class CDTE
             Console.WriteLine("\n错误 ] 未连接到服务器，无法发送消息");
         }
         
-        // 主循环：读取用户输入
         while (!cancellationTokenSource.Token.IsCancellationRequested)
         {
             string? input = Console.ReadLine();
@@ -83,8 +78,7 @@ public class CDTE
                 break;
             }
             
-            // 发送用户输入的消息
-            if (client.IsConnected())
+            4if (client.IsConnected())
             {
                 await client.SendMessageAsync(input);
             }
@@ -95,21 +89,16 @@ public class CDTE
         }
         
         Console.WriteLine("\n正在关闭客户端...");
-        
-        // 取消读取任务
         cancellationTokenSource.Cancel();
         
-        // 等待读取任务结束
         try
         {
             await readTask;
         }
         catch (OperationCanceledException)
         {
-            // 正常取消
         }
         
-        // 清理资源
         client.Close();
         
         Console.WriteLine("客户端已关闭，按任意键退出...");
@@ -135,28 +124,21 @@ public class CDTE
                     {
                         var fileInfo = new FileInfo(showFilePath);
                         
-                        // 只有文件修改时才读取
                         if (fileInfo.LastWriteTime > lastWriteTime)
                         {
                             lastWriteTime = fileInfo.LastWriteTime;
                             string content = await File.ReadAllTextAsync(showFilePath, cancellationTokenSource.Token);
                             
-                            // 调试：显示原始内容
-                            // Console.WriteLine($"[DEBUG] 读取到内容: '{content}'");
-                            
-                            // 只处理有效的呈现内容（必须以标签开头）
                             if (!string.IsNullOrEmpty(content) && 
                                 (content.StartsWith("[MSG]") || content.StartsWith("[TIP]") || 
                                  content.StartsWith("[ERR]") || content.StartsWith("[WAN]") || 
                                  content.StartsWith("[INF]") || content.StartsWith("[DBG]") || 
                                  content.StartsWith("[CHT]")))
                             {
-                                // 只有内容变化时才显示
                                 if (content != lastContent)
                                 {
                                     lastContent = content;
                                     
-                                    // 解析呈现内容
                                     if (content.StartsWith("[MSG]"))
                                     {
                                         Console.ForegroundColor = ConsoleColor.White;
@@ -194,7 +176,7 @@ public class CDTE
                                     }
                                     
                                     Console.ResetColor();
-                                    Console.Write("> "); // 重新显示输入提示
+                                    Console.Write("> ");
                                 }
                             }
                         }
@@ -206,15 +188,13 @@ public class CDTE
                 }
                 catch
                 {
-                    // 忽略文件读取错误
                 }
                 
-                await Task.Delay(500, cancellationTokenSource.Token); // 每500ms检查一次
+                await Task.Delay(500, cancellationTokenSource.Token);
             }
         }
         catch (OperationCanceledException)
         {
-            // 正常取消
         }
     }
 }

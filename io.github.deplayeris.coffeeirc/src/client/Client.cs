@@ -78,7 +78,7 @@ public partial class Client
     private string chatLogFormat = "yyyy-MM-dd HH:mm:ss";
 
     private HttpListener? pushServer;
-    private int pushPort = 10027; // 修改默认端口避免冲突
+    private int pushPort = 10027;
 
     private RSA? rsaKeyPair;
     private byte[]? aesKey;
@@ -98,14 +98,12 @@ public partial class Client
         {
             string today = DateTime.Now.ToString("yyyy-MM-dd");
             
-            // 如果日期变化或首次初始化，重置序号
             if (currentCoreLogDate != today)
             {
                 currentCoreLogDate = today;
                 coreLogSequence = 0;
             }
             
-            // 寻找可用的日志文件序号
             string logDirectory = "./ciclogs";
             Directory.CreateDirectory(logDirectory);
             
@@ -116,12 +114,10 @@ public partial class Client
                 coreLogSequence++;
             } while (File.Exists(logFileName) && coreLogSequence < 100);
             
-            // 创建日志文件流
             FileStream fileStream = new FileStream(logFileName, FileMode.Append, FileAccess.Write);
             coreLogWriter = new StreamWriter(fileStream, Encoding.UTF8);
             coreLogWriter.AutoFlush = true;
             
-            // 创建只写入文件的 Logger
             var loggerFactory = LoggerFactory.Create(builder =>
             {
                 builder.AddProvider(new FileLoggerProvider(coreLogWriter));
@@ -236,7 +232,6 @@ public partial class Client
         this.sIFP = sIFP;
         this.showManager = new ShowManager(this.sIFP);
 
-        // 初始化核心日志系统
         InitializeCoreLogger();
         
         if (cml != null)
@@ -310,7 +305,6 @@ public partial class Client
                     LogInfo("[连接] 成功连接到服务器");
                     _ = ShowAsync(ShowManager.ShowItem.ShowInfo, "客户端已连接到服务器");
                     
-                    // 心跳保活
                     _ = KeepAliveAsync();
                 }
                 else
@@ -430,7 +424,6 @@ public partial class Client
 
             if (customKey != null && !string.IsNullOrEmpty(customKey))
             {
-                // 使用自定义密钥种子
                 byte[] seedBytes = Encoding.UTF8.GetBytes(customKey);
                 using var rng = RandomNumberGenerator.Create();
                 rng.GetBytes(seedBytes);
@@ -562,7 +555,6 @@ public partial class Client
     {
         try
         {
-            // 尝试多个端口，避免冲突
             bool started = false;
             for (int port = pushPort; port < pushPort + 10; port++)
             {
@@ -571,14 +563,13 @@ public partial class Client
                     pushServer = new HttpListener();
                     pushServer.Prefixes.Add($"http://+:{port}/");
                     pushServer.Start();
-                    pushPort = port; // 更新实际使用的端口
+                    pushPort = port;
                     started = true;
                     LogInfo("[推送服务] 推送服务已启动，监听端口：" + port);
                     break;
                 }
                 catch (HttpListenerException)
                 {
-                    // 端口被占用，尝试下一个
                     pushServer?.Close();
                 }
             }
@@ -601,7 +592,7 @@ public partial class Client
                     }
                     catch (ObjectDisposedException)
                     {
-                        break; // 服务已关闭
+                        break;
                     }
                     catch (Exception e)
                     {
@@ -715,7 +706,6 @@ public partial class Client
             }
             isConnected = false;
             
-            // 停止心跳
             if (cancellationTokenSource != null)
             {
                 cancellationTokenSource.Cancel();
@@ -734,13 +724,11 @@ public partial class Client
     {
         try
         {
-            // 先断开连接
             if (isConnected)
             {
                 _ = DisconnectAsync();
             }
             
-            // 停止推送服务
             if (pushServer != null && pushServer.IsListening)
             {
                 pushServer.Stop();
@@ -748,13 +736,11 @@ public partial class Client
                 if (cml != null) LogInfo("[推送服务] 推送服务已关闭");
             }
             
-            // 等待推送服务任务结束
             if (pushServiceTask != null)
             {
                 pushServiceTask.Wait(TimeSpan.FromSeconds(5));
             }
             
-            // 取消所有异步操作
             if (cancellationTokenSource != null)
             {
                 cancellationTokenSource.Cancel();
@@ -766,7 +752,6 @@ public partial class Client
                 clientHttp.Dispose();
             }
             
-            // 释放 RSA 密钥对
             if (rsaKeyPair != null)
             {
                 rsaKeyPair.Dispose();
@@ -776,7 +761,6 @@ public partial class Client
             if (cml != null) LogInfo("[客户端] 客户端已关闭");
             _ = ShowAsync(ShowManager.ShowItem.ShowInfo, "客户端已关闭");
             
-            // 关闭核心日志
             if (coreLogWriter != null)
             {
                 coreLogWriter.Flush();
